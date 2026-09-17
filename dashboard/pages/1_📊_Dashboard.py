@@ -5,7 +5,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from app.database import SessionLocal, models
-from app.components import header
+from dashboard.components import header
 from app.agents.job_discovery import JobDiscoveryAgent
 from app.browser.application_runner import ApplicationRunner
 from app.resume.tailor import ResumeTailor
