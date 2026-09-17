@@ -1,0 +1,31 @@
+name: Daily Automated Job Discovery
+
+on:
+  schedule:
+    # Runs at 03:30 UTC (9:00 AM IST) every day
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Job Discovery Pipeline
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        NOTIFICATION_WEBHOOK_URL: ${{ secrets.NOTIFICATION_WEBHOOK_URL }}
+      run: |
+        python -c "from app.database import SessionLocal, init_db; from app.agents.job_discovery import JobDiscoveryAgent; init_db(); db=SessionLocal(); res=JobDiscoveryAgent.run_discovery(db); print('Daily Discovery Completed:', res); db.close()"
