@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from app.database import models
 from app.browser.playwright_manager import PlaywrightBrowserManager
@@ -74,4 +74,32 @@ class ApplicationRunner:
             "message": msg,
             "resume_path": tailored_resume.file_path,
             "handoff_reason": handoff_reason
+        }
+
+    @classmethod
+    def execute_bulk_applications(cls, db: Session) -> Dict[str, Any]:
+        """
+        Automatically registers and submits applications for all pending shortlisted/review applications.
+        """
+        pending_apps = db.query(models.Application).filter(
+            models.Application.status.in_(["REVIEW_REQUIRED", "SHORTLISTED"])
+        ).all()
+        
+        results = []
+        applied_count = 0
+        handoff_count = 0
+        
+        for app_obj in pending_apps:
+            res = cls.execute_application(db, app_obj.id)
+            results.append(res)
+            if res.get("status") == "APPLIED":
+                applied_count += 1
+            else:
+                handoff_count += 1
+                
+        return {
+            "processed": len(pending_apps),
+            "automatically_applied": applied_count,
+            "manual_handoff_needed": handoff_count,
+            "details": results
         }

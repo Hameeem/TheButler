@@ -15,6 +15,7 @@ class JobDiscoveryAgent:
         """
         Orchestrates job search across all enabled sources, deduplicates, analyzes fraud risk,
         calculates match scores, and persists to DB.
+        If application_mode is AUTOMATIC, automatically executes applications for qualifying jobs.
         """
         profile = db.query(models.Profile).first()
         if not profile:
@@ -46,6 +47,7 @@ class JobDiscoveryAgent:
 
         saved_count = 0
         shortlisted_count = 0
+        new_app_ids = []
 
         for norm_job in unique_jobs:
             # Check existing job by key
@@ -105,20 +107,37 @@ class JobDiscoveryAgent:
             # Step 5: Automatic Shortlisting & Application creation if match meets min score
             if match_res["overall_score"] >= profile.min_match_score and quality_status != "SUSPICIOUS":
                 shortlisted_count += 1
-                app = models.Application(
+                app_status = "SHORTLISTED" if profile.application_mode == "AUTOMATIC" else "REVIEW_REQUIRED"
+                app_obj = models.Application(
                     job_id=db_job.id,
                     profile_id=profile.id,
-                    status="REVIEW_REQUIRED" if profile.application_mode == "APPROVAL_REQUIRED" else "SHORTLISTED",
+                    status=app_status,
                     match_score=match_res["overall_score"]
                 )
-                db.add(app)
+                db.add(app_obj)
+                db.commit()
+                db.refresh(app_obj)
+                new_app_ids.append(app_obj.id)
+            else:
+                db.commit()
 
-            db.commit()
+        # Step 6: If mode is AUTOMATIC, auto-submit new applications immediately!
+        auto_applied_count = 0
+        if profile.application_mode == "AUTOMATIC" and new_app_ids:
+            from app.browser.application_runner import ApplicationRunner
+            for app_id in new_app_ids:
+                try:
+                    res = ApplicationRunner.execute_application(db, app_id)
+                    if res.get("status") == "APPLIED":
+                        auto_applied_count += 1
+                except Exception as ex:
+                    logger.error(f"Error auto-applying for app #{app_id}: {ex}")
 
         return {
             "total_discovered": len(raw_discovered_jobs),
             "unique_jobs": len(unique_jobs),
             "new_saved": saved_count,
             "shortlisted": shortlisted_count,
+            "auto_applied": auto_applied_count,
             "source_summary": source_summary
         }
